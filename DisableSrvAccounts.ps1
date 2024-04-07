@@ -70,7 +70,7 @@ function WriteLog {
 try {
     $logfilePath = "C:\temp\ServiceAccountDisableLog_$(Get-Date -Format 'yyyy-MM-dd_HH-mm-ss').txt"
     $null = $logfile = New-Item -Path $logfilePath -ItemType File -Force -ErrorAction Stop
-    WriteLog "Log started on $(Get-Date)"
+    WriteLog "Script started at $(Get-Date) under user $($env:USERDOMAIN)\$($env:USERNAME) on system $($env:COMPUTERNAME)"
     Write-Host "Log file created at $logfilePath" -ForegroundColor Green
 }
 catch {
