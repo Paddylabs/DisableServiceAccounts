@@ -3,10 +3,10 @@
     This script disables service accounts.
 
     .DESCRIPTION
-    The DisableSrvAccounts.ps1 script is used to disable service accounts in a Windows environment.
+    The DisableSrvAccounts.ps1 script is used to disable a list of user accounts.
 
     .INPUTS
-    A CSV file containing the sAMAccountName of the service accounts to be disabled.
+    A CSV file containing the sAMAccountName of the user accounts to be disabled.
 
     .OUTPUTS
     A log file containing the results of the script in C:\temp.
@@ -85,7 +85,7 @@ try {
     Start-Sleep -Seconds 1
     WriteLog "Prompting for Service Account Input file"
     $csvPath = Get-OpenFileDialog
-    $SvcUsers = @(Import-ValidCSV -inputFile $csvpath.FileName -requiredColumns 'sAMAccountName')
+    $SvcUsers = @(Import-ValidCSV -inputFile $csvpath.FileName -requiredColumns 'sAMAccountName' -ErrorAction Stop )
 }
 catch {
     Write-Host "An error occurred while importing the CSV file: $_" -ForegroundColor Yellow
@@ -93,39 +93,75 @@ catch {
     exit
 }
 
-$SvcUsersCount = $SvcUsers.Count
-
-Write-Host "There are $SvcUsersCount Service Accounts to Disable" -ForegroundColor Cyan
+Write-Host "There are $($SvcUsers.Count) Service Accounts to Disable" -ForegroundColor Cyan
 Start-Sleep -Seconds 2
+
+$continue = $true
+while ($continue) {
+    $changeNumber = Read-Host "Please Enter the Change Numnber you are performing this work under or press Q to Quit"
+    if ($changeNumber.ToLower() -eq 'q') {
+        Write-Host "Exiting Script" -ForegroundColor Yellow
+        WriteLog "User pressed Q to Exit Script"
+        exit
+    }
+    elseif ($changeNumber -match "^CHG\d{6}$") {
+        Write-Host "Change Number is $($changeNumber.ToUpper())" -ForegroundColor Cyan
+        WriteLog "Change Number is $($changeNumber.ToUpper())"
+        $continue = $false
+    }
+    else {
+        Write-Host "Invalid Change Number, please enter in the format CHGXXXXXX" -ForegroundColor Red
+        WriteLog "Invalid Change Number entered"
+    }
+}
 
 $Counter = 1
 foreach ($SvcUser in $SvcUsers) {
-    $sAMAccountName = $SvcUser.sAMAccountName
-    $PercentComplete = [int](($Counter/$SvcUsersCount)*100)
+    $PercentComplete = [int](($Counter/$($SvcUsers.Count))*100)
     if ($null -ne $Host.UI.RawUI.WindowPosition) {  
-        Write-Progress -Id 1 -Activity "Attempting to disable $sAMAccountName" -Status "$PercentComplete% Complete"  -PercentComplete $PercentComplete
+        Write-Progress -Id 1 -Activity "Attempting to disable $($SvcUser.sAMAccountName)" -Status "$PercentComplete% Complete"  -PercentComplete $PercentComplete
     }
     $Counter++
     try {
-        $User = Get-ADUser -Identity $sAMAccountName -Properties Description -ErrorAction Stop
-        Write-Host "Getting $($User.sAMAccountName)" -ForegroundColor Green
-        WriteLog "Getting $User"
-        if  ($User.Enabled -eq $true ) {
-                $oldDescription = $User.Description
-                $newDescription = "Disabled on $(Get-Date -Format 'yyyy-MM-dd') under CHG00124 " + $oldDescription
-                Set-ADUser -Identity $User -Description $newDescription -ErrorAction Stop
-                Write-Host "Setting $($User.sAMAccountName) description to $newDescription" -ForegroundColor Green
-                WriteLog "Setting $($User.sAMAccountName) description to $newDescription"
-                $User | Disable-ADAccount -ErrorAction Stop
-                Write-Host "$($User.sAMAccountName) has been disabled" -ForegroundColor Green
-                WriteLog "$User has been disabled" 
-        }
-        else {
-            Write-Host "$($User.sAMAccountName) was already disabled" -ForegroundColor Yellow
-            WriteLog "$User is already disabled - No action taken"
-        } 
+        Write-Host "Getting $($SvcUser.sAMAccountName)" -ForegroundColor Gray
+        WriteLog "Getting $($SvcUser.sAMAccountName)"
+        $User = Get-ADUser -Identity $SvcUser.sAMAccountName -Properties Description -ErrorAction Stop
     }
     catch {
-        WriteLog "Error: $_"
+        Write-Host "Error getting $($SvcUser.sAMAccountName): $_" -ForegroundColor Red
+        WriteLog "Error getting $($SvcUser.sAMAccountName): $_"
+        continue
     }
+    if  ($User.Enabled -eq $true ) {
+            $oldDescription = $User.Description
+            WriteLog "$($User.sAMAccountName) old description was; $($oldDescription)"
+            $newDescription = "Disabled on $(Get-Date -Format 'yyyy-MM-dd') under $($changeNumber.ToUpper()). " + $oldDescription
+        Try {
+            Write-Host "Setting $($User.sAMAccountName) description to $newDescription" -ForegroundColor Gray
+            WriteLog "Setting $($User.sAMAccountName) description to $newDescription"
+            Set-ADUser -Identity $User -Description $newDescription -ErrorAction Stop
+            Write-Host "Success Setting $($User.sAMAccountName)'s description" -ForegroundColor Green
+            WriteLog "Success setting $($User.sAMAccountName) new description"
+        }
+        catch {
+            Write-Host "Error Setting $($User.sAMAccountName) description" -ForegroundColor Yellow
+            WriteLog "Error Setting $($User.sAMAccountName) description"
+        }
+        Try {
+            Write-Host "Attempting to disable $($User.sAMAccountName)" -ForegroundColor Gray
+            WriteLog "Attempting to disable $($User.sAMAccountName)"
+            $User | Disable-ADAccount -ErrorAction Stop
+            Write-Host "$($User.sAMAccountName) has been disabled" -ForegroundColor Green
+            WriteLog "$User has been disabled" 
+        }
+        catch {
+            Write-Host "Error disabling $($User.sAMAccountName): $_" -ForegroundColor Red
+            WriteLog "Error disabling $($User.sAMAccountName): $_"
+            continue
+        }
+    }
+    else {
+        Write-Host "$($User.sAMAccountName) was already disabled, skipping" -ForegroundColor Yellow
+        WriteLog "$($User.sAMAccountName) was already disabled - No action taken"
+    } 
 }
